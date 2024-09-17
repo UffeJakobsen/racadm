@@ -8,6 +8,8 @@ import sys
 import time
 import urllib3
 
+args = None
+
 class RacStatus(object):
     '''Rac Status codes'''
 
@@ -42,7 +44,7 @@ class RacStatus(object):
 class RacadmBase(object):
     '''Object used to interact with iDRAC servers'''
 
-    def __init__(self, hostname='localhost', username='root', password='calvin', port=443,
+    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, verbose=0,
             verify=False, session=requests.Session()):
         '''
         initialise variables
@@ -61,12 +63,19 @@ class RacadmBase(object):
         self.username = username
         self.password = password
         self.port = port
+        self.verbose = verbose
         self.verify = verify
         self.logger = logging.getLogger('racadm.RacadmBase')
         self.session = session
         self.cgiuri = 'https://{}:{}/cgi-bin/'.format(self.hostname, self.port)
 
+
     def _get_response(self, uri, payload):
+        response, code = self._get_response_ext(uri, payload)
+        return response
+
+    def _get_response_ext(self, uri, payload):
+
         '''
         get a payload from uri
 
@@ -78,7 +87,7 @@ class RacadmBase(object):
         #response = self.session.post(uri, data=payload)
         response = self.session.post(uri, data=payload, verify=self.verify)
         self.logger.debug('<{}'.format(response.content))
-        return response.content
+        return response.content, response.status_code
 
     def _search_xml(self, xml_message, element):
         '''
@@ -102,7 +111,7 @@ class RacadmBase(object):
         sid = self._search_xml(response, 'SID')
         self.login_state = self._search_xml(response, 'STATENAME')
         self.logger.debug('SID:{}, STATE: {}'.format(sid, self.login_state))
-        if int(sid, 16) == 0:
+        if sid is not None and int(sid, 16) == 0:
             #This will probably break something
             self.logger.warning('got invalid session try again')
             time.sleep(1)
@@ -149,7 +158,9 @@ class RacadmBase(object):
         payload = '<?xml version=\'1.0\'?><LOGIN><REQ>'\
                 '<USERNAME>{}</USERNAME><PASSWORD>{}</PASSWORD>'\
                 '</REQ></LOGIN>'.format(self.username, self.password)
-        content = self._get_response(uri, payload)
+        content, status_code = self._get_response_ext(uri, payload)
+        if args.verbose >= 2 or status_code != requests.codes.ok:
+            print("INFO: ", status_code, content)
         return self._parse_login(content)
 
     def _parse_command(self, response, command):
@@ -200,13 +211,15 @@ class RacadmBase(object):
             del(self.session.cookies['sid'])
             if not self.login():
                 self.logger.error('login failed')
-                return False
+                return False, None
 
         uri = '{}exec'.format(self.cgiuri)
         payload = '<?xml version=\'1.0\'?><EXEC><REQ>'\
                 '<CMDINPUT>racadm {}</CMDINPUT><MAXOUTPUTLEN>0x0fff</MAXOUTPUTLEN>'\
                 '</REQ></EXEC>'.format(command)
-        content = self._get_response(uri, payload)
+        content, status_code = self._get_response_ext(uri, payload)
+        if status_code != requests.codes.ok:
+            print("INFO: ", status_code, content)
         return self._parse_command(content, command)
 
     def basic_command(self, command, retry=1):
@@ -234,7 +247,7 @@ class RacadmBase(object):
 class Racadm(RacadmBase):
     '''base clase for an object'''
 
-    def __init__(self, hostname='localhost', username='root', password='calvin', port=443,
+    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, verbose=0,
             verify=False, session=requests.Session()):
         '''
         initialise variables
@@ -245,7 +258,7 @@ class Racadm(RacadmBase):
         @log_level = looggin level to use as implmented by the loggin module
         @verify = whether to verify ssl certificates
         '''
-        super(Racadm, self).__init__(hostname, username, password, port, verify, session)
+        super(Racadm, self).__init__(hostname, username, password, port, verbose, verify, session)
         self.logger = logging.getLogger('racadm.Racadm')
 
     def set_led(self, state):
@@ -346,7 +359,7 @@ class Racadm(RacadmBase):
             self.logger.info('reviced arp table:\n{}'.format(message))
             arp_raw = message.split('\n')
             for arp in arp_raw:
-                match_group = re.search('\(([0-9a-fA-F\.]+)\)\s+at\s+([0-9a-fA-F\:]+)', arp)
+                match_group = re.search(r'\(([0-9a-fA-F\.]+)\)\s+at\s+([0-9a-fA-F\:]+)', arp)
                 ip = match_group.group(1)
                 mac = match_group.group(2)
                 self.logger.debug('{} -> {}'.format(mac, ip))
@@ -462,7 +475,7 @@ class Racadm(RacadmBase):
 
     def get_log(self, log_type):
         ''' get the Dell specified log type'''
-        self.logger.warn('This method is untested')
+        self.logger.warning('This method is untested')
         #getraclog returns no data
         #getsel and gettracelog both responded with bad xml and
         #ERROR: Unable to allocate memory for operation.
@@ -544,7 +557,7 @@ class Racadm(RacadmBase):
 class RacadmConfig(RacadmBase):
     '''base clase for an object'''
 
-    def __init__(self, group, hostname='localhost', username='root', password='calvin', port=443,
+    def __init__(self, group, hostname='localhost', username='root', password='calvin', port=443, verbose=0,
              verify=False, has_index=False, session=requests.Session()):
         '''
         initialise variables
@@ -555,7 +568,7 @@ class RacadmConfig(RacadmBase):
         @log_level = looggin level to use as implmented by the loggin module
         @verify = whether to verify ssl certificates
         '''
-        super(RacadmConfig, self).__init__(hostname, username, password, port, verify, session)
+        super(RacadmConfig, self).__init__(hostname, username, password, port, verbose, verify, session)
         self.logger = logging.getLogger('racadm.RacadmConfig')
         self.group = group
         self.has_index = has_index
@@ -656,6 +669,9 @@ class RacadmConfig(RacadmBase):
         return self._set_config(conf_value, conf_object)
 
 
+#
+#
+#
 def arg_parse():
     '''argument parsing function'''
 
@@ -665,16 +681,31 @@ def arg_parse():
     parser.add_argument('-p', '--password', default='calvin' )
     parser.add_argument('-H', '--hostname', default='localhost' )
     parser.add_argument('-P', '--port', default=443 )
-    parser.add_argument('-v', '--verbose', action='count' )
     parser.add_argument('-c', '--command')
+    parser.add_argument('-v', '--verbose', action='count', default=0 )
     parser.add_argument('-W', '--no-warning', action='store_true', help='Suppress insecure request/certificate warnings')
     return parser.parse_args()
 
+#
+#
+#
 def main():
     '''cli component of racadm'''
+
+    global args
+
     args = arg_parse()
-    # possible values of logging level: DEBUG INFO WARN ERROR CRITICAL
+
+    if args.verbose == 0:
+        logging.basicConfig(level=logging.INFO)
+    elif args.verbose >= 2:
+        logging.basicConfig(level=logging.DEBUG)
+
+    #logging.basicConfig(level=logging.DEBUG)
     logging.basicConfig(level=logging.INFO)
+    #logging.basicConfig(level=logging.WARN)
+    #logging.basicConfig(level=logging.ERROR)
+    #logging.basicConfig(level=logging.CRITICAL)
 
     # capture the warnings with the standard logging module
     logging.captureWarnings(True)
@@ -682,15 +713,21 @@ def main():
     if args.no_warning:
         urllib3.disable_warnings()
 
-    racadm = Racadm(args.hostname, args.username, args.password, args.port)
+    racadm = Racadm(args.hostname, args.username, args.password, args.port, args.verbose)
     if args.command:
-        if args.verbose:
-            print("command: {}".format(args.command))
+        print(args.command)
         print(racadm.basic_command(args.command))
     else:
         print(racadm.get_session_info())
         print(racadm.server_action())
 
 
+#
+#
+#
 if __name__ == '__main__':
     main()
+
+#
+# EOF
+#
