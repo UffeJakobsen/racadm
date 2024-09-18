@@ -681,7 +681,7 @@ def arg_parse():
     parser.add_argument('-p', '--password', default='calvin' )
     parser.add_argument('-H', '--hostname', default='localhost' )
     parser.add_argument('-P', '--port', default=443 )
-    parser.add_argument('-c', '--command')
+    parser.add_argument('-c', '--command', nargs='+', type=str)
     parser.add_argument('-v', '--verbose', action='count', default=0 )
     parser.add_argument('-W', '--no-warning', action='store_true', help='Suppress insecure request/certificate warnings')
     return parser.parse_args()
@@ -715,8 +715,12 @@ def main():
 
     racadm = Racadm(args.hostname, args.username, args.password, args.port, args.verbose)
     if args.command:
-        print(args.command)
-        print(racadm.basic_command(args.command))
+        if args.verbose >= 1:
+            print(args.command)
+        for cmd_str in args.command:
+            print(cmd_str)
+            print(racadm.basic_command(cmd_str))
+            print()
     else:
         print(racadm.get_session_info())
         print(racadm.server_action())
