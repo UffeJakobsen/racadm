@@ -682,6 +682,7 @@ def arg_parse():
     parser.add_argument('-H', '--hostname', default='localhost' )
     parser.add_argument('-P', '--port', default=443 )
     parser.add_argument('-c', '--command', nargs='+', type=str)
+    parser.add_argument('-S', '--sleep', nargs='?', default=0, const=2, type=int, help="Delay (sleep) between commands")
     parser.add_argument('-v', '--verbose', action='count', default=0 )
     parser.add_argument('-W', '--no-warning', action='store_true', help='Suppress insecure request/certificate warnings')
     return parser.parse_args()
@@ -721,6 +722,8 @@ def main():
             print(cmd_str)
             print(racadm.basic_command(cmd_str))
             print()
+            if args.sleep:
+              time.sleep(args.sleep)
     else:
         print(racadm.get_session_info())
         print(racadm.server_action())
